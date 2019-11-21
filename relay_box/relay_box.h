@@ -22,7 +22,7 @@ enum relay_box_led {
 #define NUM_OUTLETS (4)
 bool nighttime_outlets[NUM_OUTLETS] = { true,  true,  false, false };
 bool daytime_outlets[NUM_OUTLETS]   = { false, false, true,  true };
-int outlet_gpio_map[NUM_OUTLETS] = { 14, 12, 13, 15 }; /* D5, D6, D7, D8 */
+int outlet_gpio_map[NUM_OUTLETS] = { 14, 12, 13, 16 }; /* D5, D6, D7, D0 */
 
 /* Stringified days of the week */
 char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday",

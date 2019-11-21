@@ -124,8 +124,25 @@ void setupWifi(void)
 
 void setupServer(void)
 {
+	/* Main Webpage */
 	server.on("/", HTTP_GET, handleRoot);
-  server.on("/LED", HTTP_POST, handleLED);
+
+	/* POST Handlers */
+  server.on("/LED", HTTP_POST, handleLed);
+	server.on("/RELAY/1", HTTP_POST, handleRelay1);
+	server.on("/RELAY/2", HTTP_POST, handleRelay2);
+	server.on("/RELAY/3", HTTP_POST, handleRelay3);
+	server.on("/RELAY/4", HTTP_POST, handleRelay4);
+
+	/* GET Handlers */
+  server.on("/LED", HTTP_GET, handleLedGet);
+	server.on("/TIME", HTTP_GET, handleTime);
+	server.on("/RELAY/1", HTTP_GET, handleRelayGet1);
+	server.on("/RELAY/2", HTTP_GET, handleRelayGet2);
+	server.on("/RELAY/3", HTTP_GET, handleRelayGet3);
+	server.on("/RELAY/4", HTTP_GET, handleRelayGet4);
+
+	/* Invalid request */
   server.onNotFound(handleNotFound);
 }
 
@@ -189,22 +206,97 @@ void handleRoot(void)
 {
 	Serial.println("Handling ROOT request...");
 	
-	String root_html = ""
-		"<form action=\"/LED\" method=\"POST\">"
-		"<input type=\"submit\" value=\"Toggle LED\">"
-		"</form>"
-		"<p>" + timeStr() + "</p>";
+	String root_html = "<html>"
+		"<div>"
+		    "<form action=\"/LED\" method=\"POST\">"
+            "<input type=\"submit\" value=\"Toggle LED\">"
+		    "</form>"
+		    " LED " + ledStatus(ESP_BUILTIN_LED) +
+		"</div>"
+		"<p>" + timeStr() + "</p>"
+		"</html>";
+	
 	
   server.send(200, "text/html", root_html);
 }
 
-void handleLED(void)
+void handleTime(void)
 {
-	Serial.println("Handling LED request...");
+	Serial.println("Handling TIME GET request...");
+	server.send(200, "text/html", timeStr());
+}
+
+void handleLed(void)
+{
+	Serial.println("Handling LED POST request...");
 
 	ledToggle(ESP_BUILTIN_LED);
   server.sendHeader("Location","/");
   server.send(303);
+}
+
+void handleLedGet(void)
+{
+	Serial.println("Handling LED GET request...");
+	server.send(200, "text/html", ledStatus(ESP_BUILTIN_LED));
+}
+
+void handleRelay(int relay_num)
+{
+	Serial.print("Handling RELAY POST request for relay number ");
+	Serial.println(relay_num);
+
+	outletToggle(outlet_gpio_map[relay_num]);
+	server.sendHeader("Location","/");
+  server.send(303);
+}
+
+void handleRelayGet(int relay_num)
+{
+	Serial.print("Handling RELAY GET request for relay number ");
+	Serial.println(relay_num);
+
+	server.send(200, "text/html", outletStatus(outlet_gpio_map[relay_num]));
+}
+
+void handleRelay1(void)
+{
+	handleRelay(0);
+}
+
+void handleRelay2(void)
+{
+	handleRelay(1);
+}
+
+void handleRelay3(void)
+{
+	handleRelay(2);
+}
+
+void handleRelay4(void)
+{
+	handleRelay(3);
+}
+
+void handleRelayGet1(void)
+{
+	handleRelayGet(0);
+}
+
+void handleRelayGet2(void)
+{
+	handleRelayGet(1);
+}
+
+void handleRelayGet3(void)
+{
+	handleRelayGet(2);
+}
+
+void handleRelayGet4(void)
+{
+	handleRelayGet(3);
 }
 
 void handleNotFound(void)
@@ -226,7 +318,12 @@ void ledOff(int gpio_num)
 
 void ledToggle(int gpio_num)
 {
-	digitalWrite(gpio_num, !digitalRead(gpio_num));	
+	digitalWrite(gpio_num, !digitalRead(gpio_num));
+}
+
+String ledStatus(int gpio_num)
+{
+	return digitalRead(gpio_num) ? "OFF" : "ON";
 }
 
 void outletOn(int gpio_num)
@@ -242,6 +339,10 @@ void outletOff(int gpio_num)
 void outletToggle(int gpio_num)
 {
 	digitalWrite(gpio_num, !digitalRead(gpio_num));	
+}
+
+String outletStatus(int gpio_num) {
+	return digitalRead(gpio_num) ? "OFF" : "ON";
 }
 
 String timeStr()
