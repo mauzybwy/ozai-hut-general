@@ -1,4 +1,5 @@
 import requests
+import datetime
 
 root_url="http://192.168.1.69:6969/"
 
@@ -18,29 +19,50 @@ relay_data = {
 }
 
 day_data = {
-    '1' : "ON",
-    '2' : "ON",
+    '1' : "OFF",
+    '2' : "OFF",
     '3' : "ON",
     '4' : "ON",
-    'time' : "",
+    'time_hr' : "8",
+    'time_mn' : "8",
 }
 
 night_data = {
     '1' : "ON",
     '2' : "ON",
-    '3' : "ON",
-    '4' : "ON",
-    'time' : "",
+    '3' : "OFF",
+    '4' : "OFF",
+    'time_hr' : "21",
+    'time_mn' : "30",
 }
 
-# url = root_url + "RELAY"
-# r = requests.post(url=url, data=relay_data)
+now = datetime.datetime.now()
 
-url = root_url + "RELAY"
+time_data = {
+    'year' : now.year,
+    'month' : now.month,
+    'day' : now.day,
+    'hour' : now.hour,
+    'minute' : now.minute,
+    'second' : now.second,
+}
+
+url = root_url + "DATETIME"
+# r = requests.post(url=url, data=time_data)
 r = requests.get(url=url)
 print r.content
 
 url = root_url + "DAYTIME"
+# r = requests.post(url=url, data=day_data)
+r = requests.get(url=url)
+print r.content
+
+url = root_url + "NIGHTTIME"
+# r = requests.post(url=url, data=night_data)
+r = requests.get(url=url)
+print r.content
+
+url = root_url + "RELAY"
 r = requests.get(url=url)
 print r.content
 

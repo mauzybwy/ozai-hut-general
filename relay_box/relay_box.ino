@@ -71,7 +71,7 @@ void loop(void){
 		daytime();
 	}
 
-	delay(1000);
+	/* delay(1000); */
 }
 
 /******************************************************************************
@@ -165,6 +165,7 @@ void setupServer(void)
 	/* POST Handlers */
   server.on("/LED", HTTP_POST, handleLed);
 	server.on("/RELAY", HTTP_POST, handleRelay);
+	server.on("/DATETIME", HTTP_POST, handleDateTime);
 	server.on("/DAYTIME", HTTP_POST, handleDaytime);
 	server.on("/NIGHTTIME", HTTP_POST, handleNighttime);
 
@@ -173,8 +174,8 @@ void setupServer(void)
 
 	/* GET Handlers */
   server.on("/LED", HTTP_GET, handleLedGet);
-	server.on("/TIME", HTTP_GET, handleTime);
 	server.on("/RELAY", HTTP_GET, handleRelayGet);
+		server.on("/DATETIME", HTTP_GET, handleDateTimeGet);
 	server.on("/DAYTIME", HTTP_GET, handleDaytimeGet);
 	server.on("/NIGHTTIME", HTTP_GET, handleNighttimeGet);
 
@@ -218,6 +219,11 @@ void setupEEPROM()
 		cfg_wr_reg(CFG__DAY_START_MN__OFFSET, 0);
 		cfg_wr_reg(CFG__NIGHT_START_HR__OFFSET, 21);
 		cfg_wr_reg(CFG__NIGHT_START_MN__OFFSET, 30);
+		
+		for (int i = 0; i < NUM_OUTLETS; i++) {
+			cfg_wr_reg(CFG__DAY_RELAYS__OFFSET + i, daytime_outlets[i]);
+			cfg_wr_reg(CFG__NIGHT_RELAYS__OFFSET + i, nighttime_outlets[i]);
+		}
 	}
 }
 
@@ -255,9 +261,57 @@ void handleRoot(void)
   server.send(200, "text/html", root_html);
 }
 
-void handleTime(void)
+void handleDateTime(void)
 {
-	Serial.println("Handling TIME GET request...");
+	Serial.println("Handling DATETIME POST request...");
+
+	DateTime now = rtc.now();
+	uint16_t year = now.year();
+	uint8_t month = now.month();
+	uint8_t day = now.day();
+	uint8_t hour = now.hour();
+	uint8_t minute = now.minute();
+	uint8_t second = now.second();
+
+	if (server.hasArg("year")) {
+		year = (uint16_t) atoiStr(server.arg("year"));
+	}
+
+	if (server.hasArg("month")) {
+		month = (uint8_t) atoiStr(server.arg("month"));
+	}
+
+	if (server.hasArg("day")) {
+		day = (uint8_t) atoiStr(server.arg("day"));
+	}
+
+	if (server.hasArg("hour")) {
+		hour = (uint8_t) atoiStr(server.arg("hour"));
+	}
+
+	if (server.hasArg("minute")) {
+		minute = (uint8_t) atoiStr(server.arg("minute"));
+	}
+
+	if (server.hasArg("second")) {
+		second = (uint8_t) atoiStr(server.arg("second"));
+	}
+
+	Serial.println(year);
+	Serial.println(month);
+	Serial.println(day);
+	Serial.println(hour);
+	Serial.println(minute);
+	Serial.println(second);
+	/* rtc.adjust(DateTime(2069, 12, 25, 12, 34, 56)); */
+	rtc.adjust(DateTime(year, month, day, hour, minute, second));
+	
+	server.send(303);
+}
+
+void handleDateTimeGet(void)
+{
+	Serial.println("Handling DATETIME GET request...");
 	server.send(200, "text/plain", timeStr());
 }
 
@@ -332,6 +386,14 @@ void handleRelay()
   server.send(303);
 }
 
+int atoiStr(String str) {
+	int strlen = str.length() + 1;
+	char char_array[strlen];
+	str.toCharArray(char_array, strlen);
+
+	return atoi((const char*)char_array);
+}
+
 void handleDaytime()
 {
 	String key, val;
@@ -341,8 +403,12 @@ void handleDaytime()
 		key.toLowerCase();
 		val.toLowerCase();
 
-		if (key == "time") {
-			
+		if (key == "time_hr") {
+			int time_hr = atoiStr(val);
+			cfg_wr_reg(CFG__DAY_START_HR__OFFSET, time_hr);
+		} else if (key == "time_mn") {
+			int time_mn = atoiStr(val);
+			cfg_wr_reg(CFG__DAY_START_MN__OFFSET, time_mn);
 		} else {
 			/* Parse out relay number */
 			int strlen = key.length() + 1;
@@ -358,7 +424,8 @@ void handleDaytime()
 				relay_num--;
 			
 				/* Update that relay value in daytime array */				
-				daytime_outlets[relay_num] = val.equals("on");
+				int relay_eeprom = CFG__DAY_RELAYS__OFFSET + relay_num;
+				cfg_wr_reg(relay_eeprom, val.equals("on"));
 			}
 		}
 	}
@@ -375,8 +442,12 @@ void handleNighttime()
 		key.toLowerCase();
 		val.toLowerCase();
 
-		if (key == "time") {
-			
+		if (key == "time_hr") {
+			int time_hr = atoiStr(val);
+			cfg_wr_reg(CFG__NIGHT_START_HR__OFFSET, time_hr);
+		} else if (key == "time_mn") {
+			int time_mn = atoiStr(val);
+			cfg_wr_reg(CFG__NIGHT_START_MN__OFFSET, time_mn);
 		} else {
 			/* Parse out relay number */
 			int strlen = key.length() + 1;
@@ -392,7 +463,8 @@ void handleNighttime()
 				relay_num--;
 			
 				/* Update that relay value in nighttime array */
-				nighttime_outlets[relay_num] = val.equals("on");
+				int relay_eeprom = CFG__NIGHT_RELAYS__OFFSET + relay_num;
+				cfg_wr_reg(relay_eeprom, val.equals("on"));
 			}
 		}
 	}
@@ -418,31 +490,48 @@ void handleDaytimeGet()
 {
 	Serial.print("Handling RELAY GET request");
 
-	String daytime_relays = "{";
+	String resp = "{";
 	
 	for (int i=0; i < NUM_OUTLETS; i++) {
-		String relay_status = daytime_outlets[i] ? "ON" : "OFF";
-		daytime_relays += "'" + String(i) + "':\"" + relay_status + "\",";
+		int relay_eeprom = CFG__DAY_RELAYS__OFFSET + i;
+		byte relay_on = cfg_rd_reg(relay_eeprom);
+		
+		String relay_status = relay_on ? "ON" : "OFF";
+		resp += "'" + String(i) + "':\"" + relay_status + "\",";
 	}
-	
-	daytime_relays += "}";
 
-	server.send(200, "text/plain", daytime_relays);
+	byte time_hr = cfg_rd_reg(CFG__DAY_START_HR__OFFSET);
+	byte time_mn = cfg_rd_reg(CFG__DAY_START_MN__OFFSET);
+	resp += "'time_hr':\"" + String(time_hr) + "\"";
+	resp += "'time_mn':\"" + String(time_mn) + "\"";
+	
+	resp += "}";
+
+	server.send(200, "text/plain", resp);
 }
 
 void handleNighttimeGet()
 {
 	Serial.print("Handling RELAY GET request");
 
-	String nighttime_relays = "{";
+	String resp = "{";
 	
 	for (int i=0; i < NUM_OUTLETS; i++) {
-		nighttime_relays += "'" + String(i) + "':\"" + String(nighttime_outlets[i]) + "\",";
+		int relay_eeprom = CFG__NIGHT_RELAYS__OFFSET + i;
+		byte relay_on = cfg_rd_reg(relay_eeprom);
+		
+		String relay_status = relay_on ? "ON" : "OFF";
+		resp += "'" + String(i) + "':\"" + relay_status + "\",";		
 	}
-	
-	nighttime_relays += "}";
 
-	server.send(200, "text/plain", nighttime_relays);
+	byte time_hr = cfg_rd_reg(CFG__NIGHT_START_HR__OFFSET);
+	byte time_mn = cfg_rd_reg(CFG__NIGHT_START_MN__OFFSET);
+	resp += "'time_hr':\"" + String(time_hr) + "\"";
+	resp += "'time_mn':\"" + String(time_mn) + "\"";
+	
+	resp += "}";
+
+	server.send(200, "text/plain", resp);
 }
 
 void handleNotFound(void)
@@ -559,14 +648,17 @@ byte cfg_rd_reg(int reg_offset)
 	val = EEPROM.read(CFG__EEPROM_START__ADDR + reg_offset);
 
 	return val;
-}
+}	
 
 void daytime()
 {
 	cfg_wr_reg(CFG__DAY_NIGHT__OFFSET, DAYTIME);
 	
 	for (int i = 0; i < NUM_OUTLETS; i++) {
-		if (daytime_outlets[i]) {
+		int relay_eeprom = CFG__DAY_RELAYS__OFFSET + i;
+		byte relay_on = cfg_rd_reg(relay_eeprom);
+		
+		if (relay_on) {
 			Serial.print("Turning ON outlet #");
 			Serial.println(i);
 			outletOn(i);
@@ -586,7 +678,10 @@ void nighttime()
 	cfg_wr_reg(CFG__DAY_NIGHT__OFFSET, NIGHTTIME);
 	
 	for (int i = 0; i < NUM_OUTLETS; i++) {
-		if (nighttime_outlets[i]) {
+		int relay_eeprom = CFG__NIGHT_RELAYS__OFFSET + i;
+		byte relay_on = cfg_rd_reg(relay_eeprom);
+		
+		if (relay_on) {
 			Serial.print("Turning ON outlet #");
 			Serial.println(i);
 			outletOn(i);

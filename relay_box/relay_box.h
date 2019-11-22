@@ -35,9 +35,12 @@ char daysOfTheWeek[7][12] = { "Sunday", "Monday", "Tuesday", "Wednesday",
 #define CFG__DAY_START_MN__OFFSET   (0x3)
 #define CFG__NIGHT_START_HR__OFFSET (0x4)
 #define CFG__NIGHT_START_MN__OFFSET (0x5)
+#define CFG__DAY_RELAYS__OFFSET     (0x6)
+#define CFG__NIGHT_RELAYS__OFFSET   (CFG__DAY_RELAYS__OFFSET + NUM_OUTLETS)
+
 
 /* Register value defines */
-#define MAGIC_NUM (0x75) /* Can change this to force an EEPROM write at setup */
+#define MAGIC_NUM (0x69) /* Can change this to force an EEPROM write at setup */
 #define DAYTIME   (0x1)
 #define NIGHTTIME (0x2)
 
