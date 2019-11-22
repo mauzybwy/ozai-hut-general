@@ -502,8 +502,9 @@ void handleDaytimeGet()
 
 	byte time_hr = cfg_rd_reg(CFG__DAY_START_HR__OFFSET);
 	byte time_mn = cfg_rd_reg(CFG__DAY_START_MN__OFFSET);
-	resp += "'time_hr':\"" + String(time_hr) + "\"";
-	resp += "'time_mn':\"" + String(time_mn) + "\"";
+	resp += "'time_hr':\"" + String(time_hr) + "\",";
+	resp += "'time_mn':\"" + String(time_mn) + "\",";
+	resp += "'active':\"" + String(!isNighttime()) + "\",";
 	
 	resp += "}";
 
@@ -526,8 +527,9 @@ void handleNighttimeGet()
 
 	byte time_hr = cfg_rd_reg(CFG__NIGHT_START_HR__OFFSET);
 	byte time_mn = cfg_rd_reg(CFG__NIGHT_START_MN__OFFSET);
-	resp += "'time_hr':\"" + String(time_hr) + "\"";
-	resp += "'time_mn':\"" + String(time_mn) + "\"";
+	resp += "'time_hr':\"" + String(time_hr) + "\",";
+	resp += "'time_mn':\"" + String(time_mn) + "\",";
+	resp += "'active':\"" + String(isNighttime()) + "\",";
 	
 	resp += "}";
 
