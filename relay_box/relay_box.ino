@@ -11,11 +11,17 @@
  * Global Objects
  ******************************************************************************/
 /* Wifi Objects */
+/* WiFiServer server(6969); */
 ESP8266WiFiMulti wifiMulti;
-ESP8266WebServer server(80);
+ESP8266WebServer server(6969);
 
 /* RTC Objects */
 RTC_DS3231 rtc;
+
+/* config static IP */
+IPAddress ip(192, 168, 1, 69);
+IPAddress gateway(192, 168, 1, 1);
+IPAddress subnet(255, 255, 255, 0);
 
 /******************************************************************************
  * Setup
@@ -58,11 +64,11 @@ void loop(void){
 	if (is_nighttime == true && day_night == DAYTIME) {
 		/* Night-time begins */
 		Serial.println("ITS NIGHT NOW");
-		handleNighttime();
+		nighttime();
 	} else if (is_nighttime == false && day_night == NIGHTTIME) {
 		/* Day-time begins */
 		Serial.println("ITS DAY NOW");
-		handleDaytime();
+		daytime();
 	}
 
 	delay(1000);
@@ -87,11 +93,40 @@ void setupGPIO(void)
 	/* Set up outlet GPIOs */
 	for (int i = 0; i < NUM_OUTLETS; i++) {
 		pinMode(outlet_gpio_map[i], OUTPUT);
-		outletOff(outlet_gpio_map[i]);
+		outletOff(i);
 	}
 }
 
 void setupWifi(void)
+{
+	WiFi.begin(ssid[0], password[0]);
+	WiFi.config(ip, gateway, subnet); /* Set static IP */
+  
+  Serial.print("Connecting ...");
+	for (int i = 0; WiFi.status() != WL_CONNECTED && i < 40; i++)
+	{
+    delay(250);
+    Serial.print('.');
+  }
+
+	if (WiFi.status() == WL_CONNECTED) {		
+		Serial.println('\n');
+		Serial.print("Connected to ");
+		Serial.println(WiFi.SSID());
+		Serial.print("IP address:\t");
+		Serial.println(WiFi.localIP());
+
+		if (MDNS.begin("esp8266")) {
+			Serial.println("mDNS responder started");
+		} else {
+			Serial.println("Error setting up MDNS responder!");
+		}
+	} else {
+		Serial.println("Timeout connecting to Wifi, will operate on defaults.");
+	}
+}
+
+void setupWifiMulti(void)
 {
 	for (int i = 0; i < NUM_WIFI; i++)
 	{
@@ -105,7 +140,7 @@ void setupWifi(void)
     Serial.print('.');
   }
 
-	if (wifiMulti.run() == WL_CONNECTED) {		
+	if (wifiMulti.run() == WL_CONNECTED) {
 		Serial.println('\n');
 		Serial.print("Connected to ");
 		Serial.println(WiFi.SSID());
@@ -129,18 +164,19 @@ void setupServer(void)
 
 	/* POST Handlers */
   server.on("/LED", HTTP_POST, handleLed);
-	server.on("/RELAY/1", HTTP_POST, handleRelay1);
-	server.on("/RELAY/2", HTTP_POST, handleRelay2);
-	server.on("/RELAY/3", HTTP_POST, handleRelay3);
-	server.on("/RELAY/4", HTTP_POST, handleRelay4);
+	server.on("/RELAY", HTTP_POST, handleRelay);
+	server.on("/DAYTIME", HTTP_POST, handleDaytime);
+	server.on("/NIGHTTIME", HTTP_POST, handleNighttime);
+
+	server.on("/POSTY", HTTP_POST, handlePosty);
+	
 
 	/* GET Handlers */
   server.on("/LED", HTTP_GET, handleLedGet);
 	server.on("/TIME", HTTP_GET, handleTime);
-	server.on("/RELAY/1", HTTP_GET, handleRelayGet1);
-	server.on("/RELAY/2", HTTP_GET, handleRelayGet2);
-	server.on("/RELAY/3", HTTP_GET, handleRelayGet3);
-	server.on("/RELAY/4", HTTP_GET, handleRelayGet4);
+	server.on("/RELAY", HTTP_GET, handleRelayGet);
+	server.on("/DAYTIME", HTTP_GET, handleDaytimeGet);
+	server.on("/NIGHTTIME", HTTP_GET, handleNighttimeGet);
 
 	/* Invalid request */
   server.onNotFound(handleNotFound);
@@ -195,10 +231,10 @@ void setupDayNight()
 	/* Configure initial Day/Night */
 	if (is_nighttime == true) {
 		Serial.println("Starting up in NIGHTTIME");
-		handleNighttime();
+		nighttime();
 	} else {
 		Serial.println("Starting up in DAYTIME");
-		handleDaytime();
+		daytime();
 	}
 }
 
@@ -214,8 +250,7 @@ void handleRoot(void)
 		    " LED " + ledStatus(ESP_BUILTIN_LED) +
 		"</div>"
 		"<p>" + timeStr() + "</p>"
-		"</html>";
-	
+		"</html>";	
 	
   server.send(200, "text/html", root_html);
 }
@@ -223,7 +258,7 @@ void handleRoot(void)
 void handleTime(void)
 {
 	Serial.println("Handling TIME GET request...");
-	server.send(200, "text/html", timeStr());
+	server.send(200, "text/plain", timeStr());
 }
 
 void handleLed(void)
@@ -235,68 +270,179 @@ void handleLed(void)
   server.send(303);
 }
 
-void handleLedGet(void)
+void handlePosty(void)
 {
-	Serial.println("Handling LED GET request...");
-	server.send(200, "text/html", ledStatus(ESP_BUILTIN_LED));
-}
+	String key, val;
+	for (int i = 0; i < server.args();i++){
+		key = server.argName(i);
+		val = server.arg(i);
+		key.toLowerCase();
+		val.toLowerCase();
 
-void handleRelay(int relay_num)
-{
-	Serial.print("Handling RELAY POST request for relay number ");
-	Serial.println(relay_num);
-
-	outletToggle(outlet_gpio_map[relay_num]);
-	server.sendHeader("Location","/");
+		/* LED */
+		if (key == "led") {
+			if (val == "on") {
+				ledOn(ESP_BUILTIN_LED);
+			} else if (val == "off") {
+				ledOff(ESP_BUILTIN_LED);
+			}
+		}
+	}
+	
   server.send(303);
 }
 
-void handleRelayGet(int relay_num)
+void handleLedGet(void)
 {
-	Serial.print("Handling RELAY GET request for relay number ");
-	Serial.println(relay_num);
-
-	server.send(200, "text/html", outletStatus(outlet_gpio_map[relay_num]));
+	Serial.println("Handling LED GET request...");
+	server.send(200, "text/plain", ledStatus(ESP_BUILTIN_LED));
 }
 
-void handleRelay1(void)
+void handleRelay()
 {
-	handleRelay(0);
+	String key, val;
+	for (int i = 0; i < server.args();i++){
+		key = server.argName(i);
+		val = server.arg(i);
+		key.toLowerCase();
+		val.toLowerCase();
+
+		/* Parse out relay number */
+		int strlen = key.length() + 1;
+		char char_array[strlen];
+		key.toCharArray(char_array, strlen);
+		int relay_num = atoi((const char*)char_array);
+
+		if (relay_num > 0) {
+			Serial.print("Handling RELAY POST request for relay number ");
+			Serial.println(relay_num);
+
+			/* Relays are zero-indexed */
+			relay_num--;
+			
+			/* Switch that relay as desired */
+			if (val == "on") {
+				outletOn(relay_num);
+			} else if (val == "off") {
+				outletOff(relay_num);
+			}
+		}
+	}
+	
+  server.send(303);
 }
 
-void handleRelay2(void)
+void handleDaytime()
 {
-	handleRelay(1);
+	String key, val;
+	for (int i = 0; i < server.args();i++){
+		key = server.argName(i);
+		val = server.arg(i);
+		key.toLowerCase();
+		val.toLowerCase();
+
+		if (key == "time") {
+			
+		} else {
+			/* Parse out relay number */
+			int strlen = key.length() + 1;
+			char char_array[strlen];
+			key.toCharArray(char_array, strlen);
+			int relay_num = atoi((const char*)char_array);
+
+			if (relay_num > 0) {
+				Serial.print("Handling DAYTIME POST request for relay number ");
+				Serial.println(relay_num);
+
+				/* Relays are zero-indexed */
+				relay_num--;
+			
+				/* Update that relay value in daytime array */				
+				daytime_outlets[relay_num] = val.equals("on");
+			}
+		}
+	}
+	
+  server.send(303);
 }
 
-void handleRelay3(void)
+void handleNighttime()
 {
-	handleRelay(2);
+	String key, val;
+	for (int i = 0; i < server.args();i++){
+		key = server.argName(i);
+		val = server.arg(i);
+		key.toLowerCase();
+		val.toLowerCase();
+
+		if (key == "time") {
+			
+		} else {
+			/* Parse out relay number */
+			int strlen = key.length() + 1;
+			char char_array[strlen];
+			key.toCharArray(char_array, strlen);
+			int relay_num = atoi((const char*)char_array);
+
+			if (relay_num > 0) {
+				Serial.print("Handling NIGHTTIME POST request for relay number ");
+				Serial.println(relay_num);
+
+				/* Relays are zero-indexed */
+				relay_num--;
+			
+				/* Update that relay value in nighttime array */
+				nighttime_outlets[relay_num] = val.equals("on");
+			}
+		}
+	}
+	
+  server.send(303);
 }
 
-void handleRelay4(void)
+void handleRelayGet()
 {
-	handleRelay(3);
+	Serial.print("Handling RELAY GET request");
+
+	String relay_status = "{"
+		"'1':\"" + outletStatus(0) + "\","
+		"'2':\"" + outletStatus(1) + "\","
+		"'3':\"" + outletStatus(2) + "\","
+		"'4':\"" + outletStatus(3) + "\","
+		"}";
+
+	server.send(200, "text/plain", relay_status);
 }
 
-void handleRelayGet1(void)
+void handleDaytimeGet()
 {
-	handleRelayGet(0);
+	Serial.print("Handling RELAY GET request");
+
+	String daytime_relays = "{";
+	
+	for (int i=0; i < NUM_OUTLETS; i++) {
+		String relay_status = daytime_outlets[i] ? "ON" : "OFF";
+		daytime_relays += "'" + String(i) + "':\"" + relay_status + "\",";
+	}
+	
+	daytime_relays += "}";
+
+	server.send(200, "text/plain", daytime_relays);
 }
 
-void handleRelayGet2(void)
+void handleNighttimeGet()
 {
-	handleRelayGet(1);
-}
+	Serial.print("Handling RELAY GET request");
 
-void handleRelayGet3(void)
-{
-	handleRelayGet(2);
-}
+	String nighttime_relays = "{";
+	
+	for (int i=0; i < NUM_OUTLETS; i++) {
+		nighttime_relays += "'" + String(i) + "':\"" + String(nighttime_outlets[i]) + "\",";
+	}
+	
+	nighttime_relays += "}";
 
-void handleRelayGet4(void)
-{
-	handleRelayGet(3);
+	server.send(200, "text/plain", nighttime_relays);
 }
 
 void handleNotFound(void)
@@ -326,23 +472,25 @@ String ledStatus(int gpio_num)
 	return digitalRead(gpio_num) ? "OFF" : "ON";
 }
 
-void outletOn(int gpio_num)
+void outletOn(int relay_num)
 {
-	digitalWrite(gpio_num, HIGH);
+	digitalWrite(outlet_gpio_map[relay_num], HIGH);
 }
 
-void outletOff(int gpio_num)
+void outletOff(int relay_num)
 {
-	digitalWrite(gpio_num, LOW);
+	digitalWrite(outlet_gpio_map[relay_num], LOW);
 }
 
-void outletToggle(int gpio_num)
+void outletToggle(int relay_num)
 {
+	int gpio_num = outlet_gpio_map[relay_num];
 	digitalWrite(gpio_num, !digitalRead(gpio_num));	
 }
 
-String outletStatus(int gpio_num) {
-	return digitalRead(gpio_num) ? "OFF" : "ON";
+String outletStatus(int relay_num) {
+	int gpio_num = outlet_gpio_map[relay_num];
+	return digitalRead(gpio_num) ? "ON" : "OFF";
 }
 
 String timeStr()
@@ -413,38 +561,39 @@ byte cfg_rd_reg(int reg_offset)
 	return val;
 }
 
-void handleDaytime()
+void daytime()
 {
 	cfg_wr_reg(CFG__DAY_NIGHT__OFFSET, DAYTIME);
 	
-	for (int i; i < NUM_OUTLETS; i++) {
+	for (int i = 0; i < NUM_OUTLETS; i++) {
 		if (daytime_outlets[i]) {
 			Serial.print("Turning ON outlet #");
 			Serial.println(i);
-			outletOn(outlet_gpio_map[i]);
+			outletOn(i);
 		} else {
 			Serial.print("Turning OFF outlet #");
 			Serial.println(i);
-			outletOff(outlet_gpio_map[i]);
+			outletOff(i);
 		}
 	}
-	
+
+	Serial.println("poop but daytime");
 	Serial.flush();
 }
 
-void handleNighttime()
+void nighttime()
 {
 	cfg_wr_reg(CFG__DAY_NIGHT__OFFSET, NIGHTTIME);
 	
-	for (int i; i < NUM_OUTLETS; i++) {
+	for (int i = 0; i < NUM_OUTLETS; i++) {
 		if (nighttime_outlets[i]) {
 			Serial.print("Turning ON outlet #");
 			Serial.println(i);
-			outletOn(outlet_gpio_map[i]);
+			outletOn(i);
 		} else {
 			Serial.print("Turning OFF outlet #");
 			Serial.println(i);
-			outletOff(outlet_gpio_map[i]);
+			outletOff(i);
 		}
 	}
 

@@ -4,13 +4,13 @@
 /* Wifi Config */
 #define NUM_WIFI (1)
 const char* ssid[NUM_WIFI] = {
-    /* "TheSaltySpitoon", */
     "TheSaltySpitoon_2GEXT"
+    /* "TheSaltySpitoon", */
 };
 
-const char* password[NUM_WIFI] = {
+const char* password[NUM_WIFI] = {    
+    "AbandonAllHopeYeWhoEnterHere",
     /* "AbandonAllHopeYeWhoEnterHere" */
-    "AbandonAllHopeYeWhoEnterHere",	
 };
 
 /* LED Config */
